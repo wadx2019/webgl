@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>maze</title>
+    <script id="shader-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertex;
+        attribute vec3 aColor;
+        attribute vec2 aMp;
+
+        uniform bool isMaze;
+        uniform mat4 uPMatrix;
+        uniform mat4 uMVMatrix; // 模型变换
+
+        uniform mat4 uCMVMatrix; // 摄像机位移
+        uniform mat4 uCRMatrix; // 摄像机旋转
+
+        varying vec3 vColor;
+        varying vec2 vMp;
+        void main() {
+            vec4 po = uMVMatrix * vec4(aVertex, 1.0);
+
+            if(isMaze) {
+                vMp = aMp;
+            } else {
+                vColor = aColor;
+            }
+
+            gl_Position = uPMatrix * uCRMatrix * uCMVMatrix * po;
+        }
+    </script>
+
+    <script id="shader-fs" type="x-shader/x-fragment">
+        precision lowp float;
+
+        uniform bool isMaze;
+        uniform sampler2D uTex;
+
+        varying vec3 vColor;
+        varying vec2 vMp;
+        void main() {
+            if(isMaze) {
+                gl_FragColor = texture2D(uTex, vMp);
+            } else {
+                gl_FragColor = vec4(vColor, 1.0);
+            }
+        }
+    </script>
+    <style>
+        html {
+            cursor: none;
+        }
+        .c2d {
+            margin: 20px auto;
+            display: block;
+            transition-property: opacity;
+            transition-duration: 1s;
+            visibility: hidden;
+        }
+        .c3d {
+            display: block;
+            margin: 0 auto;
+            position: absolute;
+            height: 90%;
+            width: 90%;
+            position: absolute;
+            top: 0px;
+            bottom: 0px;
+            z-index: 0;
+            left:5%;
+            top:5%;
+        }
+        .role {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: red;
+            position: absolute;
+            transition-property: opacity;
+            transition-duration: 1s;
+            visibility: hidden;
+        }
+        .cheat_wrap {
+            width: 200px;
+            height: 30px;
+            position: absolute;
+            transition-property: transform;
+            transition-duration: .5s;
+            left: 10px;
+            bottom: 10px;
+            transform: translateY(150%);
+            border: 1px solid black;
+            border-radius: 6px;
+            overflow: hidden;
+            display: none;
+        }
+        .cheat {
+            width: 100%;
+            height: 30px;
+            border: 0;
+            font-size: 18px;
+            line-height: 30px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c2d" class="c2d" width="390" height="290"></canvas>
+    <canvas id="c3d" class="c3d" width="800" height="600"></canvas>
+    <div class="cheat_wrap" id="cheatWrap">
+        <input type="text" id="cheat" class="cheat" placeholder="请输入秘籍" />
+    </div>
+    <script>
+        var oC2 = document.getElementById('c2d');
+        var ctx = oC2.getContext('2d');
+
+
+        var width = oC2.width;
+        var height = oC2.height;
+        var maxX = 18;
+        var maxY = 13;
+
+        var firstGrid;
+        var endGrid;
+        var success=true;
+        var fly=false;
+        var drop=false;
+        var visited=[];
+        for(var i=0;i<height;i+=10)
+        {
+            visited[i]=[];
+            for(var j=0;j<width;j+=10)
+            {
+                visited[i][j]=false;
+            }
+        }
+        function Grid(x, y) {
+            this.x = x;
+            this.y = y;
+            this.choosed = false;
+            this.children = [];
+            this.initNeighbor();
+        }
+
+        Grid.prototype.initNeighbor = function() {
+            var x = this.x;
+            var y = this.y;
+
+            this.neighbor = [];
+
+            if(y > 0) {
+                this.neighbor.push({
+                   x: x,
+                   y: y - 1 
+                });
+            }
+
+            if(y < maxY) {
+                this.neighbor.push({
+                    x: x,
+                    y: y + 1
+                });
+            }
+
+            if(x > 0) {
+                this.neighbor.push({
+                   x: x - 1,
+                   y: y 
+                });
+            }
+
+            if(x < maxX) {
+                this.neighbor.push({
+                   x: x + 1,
+                   y: y
+                });
+            }
+
+            this.neighbor.sort(function() {
+                return 0.5 - Math.random();
+            });
+        };
+
+        Grid.prototype.getNeighbor = function() {
+            var x, y, neighbor;
+
+            this.choosed = true;
+
+            for(var i = 0; i < this.neighbor.length; i++) {
+                x = this.neighbor[i].x;
+                y = this.neighbor[i].y;
+
+                neighbor = maze.grids[y][x];
+
+                if(!neighbor.choosed) {
+
+                    neighbor.parent = this;
+
+                    return neighbor;
+                }
+            }
+
+            if(this.parent === firstGrid) {
+                return 0;
+            } else {
+                return 1;
+            }
+        };
+
+        function Maze() {
+            this.path = [];
+            this.grids = [];
+            this.stack = [];
+            this.init();
+        }
+
+        Maze.prototype.init = function() {
+            for(var i = 0; i <= maxY; i++) {
+                this.grids[i] = [];
+                for(var j = 0; j <= maxX; j++) {
+                    this.grids[i][j] = new Grid(j, i);
+                }
+            }
+
+            firstGrid = this.grids[0][0];
+            endGrid = this.grids[13][18];
+        };
+
+        Maze.prototype.findPath = function() {
+            var tmp;
+            var curr = firstGrid;
+            while(1) {
+                tmp = curr.getNeighbor();
+
+                if(tmp === 0) {
+                    console.log('路径找寻结束');
+                    break;
+                } else if(tmp === 1) {
+                    curr = curr.parent;
+                } else {
+
+                    curr.children[curr.children.length] = tmp;
+
+                    curr = tmp;
+                }
+            }
+        };
+
+        
+
+        function drawPath(node) {;
+            var i = 0;
+
+            drawRect(node.x * 20, node.y * 20);
+
+            for(; i < node.children.length; i++) {
+                if(node.children[i]) {
+                    drawRect(node.x * 20 + (node.children[i].x - node.x) * 10, node.y * 20 + (node.children[i].y - node.y) * 10); // 画路
+                    drawPath(node.children[i]);
+                }
+            }
+
+        }
+
+        function drawRect(x, y) {
+            ctx.fillRect(x + 10, y + 10, 10, 10);
+        }
+
+        function drawDebug(x, y, color) {
+            // return ;
+            ctx.beginPath();
+            ctx.fillStyle = color;
+            ctx.arc(x, y, 1, 0, Math.PI * 2, false);
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        ctx.fillStyle = 'red；';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = 'white';
+
+        var maze = new Maze();
+
+        maze.findPath();
+
+        drawPath(firstGrid);
+
+        drawStartEnd();
+
+        function drawStartEnd() {
+            ctx.fillRect(0, 10, 10, 10);
+            ctx.fillRect(19 * 20, 13 * 20 + 10, 10, 10);
+            setTimeout(function() {
+                // role.hide();
+            }, 3000);
+        }
+
+
+        /**        绘制2D底图结束，开始获取墙面信息           **/
+
+        var rowWall = [];
+        var colWall = [];
+        var wallList = [];
+        var pixData;
+
+        getWall();
+
+        function getWall() {
+            pixData = ctx.getImageData(0, 0, width, height).data;
+            console.log(pixData);
+            for(var tot=0;tot<=3;tot++) {
+                getRowWall(tot,4);
+            }
+        }
+
+        function getRowWall(t,sum) {
+            var i = 0;
+            var j = 0;
+            var x1, x2;
+            rowWall[t]=[];
+            console.log('getRowWall');
+            for(; i < height; i += 10) {
+                rowWall[t][i] = [];
+                for(j=0;j+10<width;j+=10)
+                {
+                    if(isBlack(j,i)&&isBlack(j+9,i)&&(Math.random()<1/(sum-t+1) || t==sum-1)){
+                        rowWall[t][i].push({
+                            x1: 2 * (j / width) - 1,
+                            x2: 2 * ((j+10) / width) - 1
+                        });
+                        visited[i][j]=true;
+
+                    }
+                }
+            }
+        }
+
+        function getPix(x, y) {
+            var start = y * width * 4 + x * 4;
+            var r = pixData[start];
+            var g = pixData[start + 1];
+            var b = pixData[start + 2];
+            var a = pixData[start + 3];
+
+            return [r, g, b, a];
+        }
+
+        function isBlack(x, y) {
+            var start = y * width * 4 + x * 4;
+            var r = pixData[start];
+
+            if(r === 0) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+
+        /**        获取墙面信息结束，开始绘制3D迷宫           **/
+        var oC3 = document.getElementById('c3d');
+        var webgl = oC3.getContext('webgl');
+
+        var vsScript = document.getElementById('shader-vs').innerText;
+        var fsScript = document.getElementById('shader-fs').innerText;
+
+        var vs = webgl.createShader(webgl.VERTEX_SHADER);
+        var fs = webgl.createShader(webgl.FRAGMENT_SHADER);
+
+        webgl.shaderSource(vs, vsScript);
+        webgl.shaderSource(fs, fsScript);
+
+        webgl.compileShader(vs);
+        if(!webgl.getShaderParameter(vs, webgl.COMPILE_STATUS)) {
+            alert('vs error');
+        }
+        webgl.compileShader(fs);
+        if(!webgl.getShaderParameter(fs, webgl.COMPILE_STATUS)) {
+            alert('fs error');
+        }
+
+        var program = webgl.createProgram();
+
+        webgl.attachShader(program, vs);
+        webgl.attachShader(program, fs);
+
+        webgl.linkProgram(program);
+        webgl.useProgram(program);
+
+        var aVertex = webgl.getAttribLocation(program, 'aVertex');
+        var aColor = webgl.getAttribLocation(program, 'aColor');
+        var aMp = webgl.getAttribLocation(program, 'aMp');
+        var uPMatrix = webgl.getUniformLocation(program, 'uPMatrix');
+        var uMVMatrix = webgl.getUniformLocation(program, 'uMVMatrix');
+        var uCRMatrix = webgl.getUniformLocation(program, 'uCRMatrix');
+        var uCMVMatrix = webgl.getUniformLocation(program, 'uCMVMatrix');
+        var uTex = webgl.getUniformLocation(program, 'uTex');
+        var isMaze = webgl.getUniformLocation(program, 'isMaze');
+
+        webgl.enableVertexAttribArray(aVertex);
+        webgl.enableVertexAttribArray(aMp);
+
+        var po_data = [];
+        var index_data = [];
+        var mp_data = [];
+        var item, tmp;
+        var s = 0;
+        var k;
+        var count = 0;
+
+        for(var i=0;i<100;i++)
+        {
+            var x1=(1*i/100) - 0.5;
+            var x2=(1*(i+1)/100) - 0.5;
+            for(j=0;j<145;j++)
+            {
+                k1=(1*j/145) - 0.5;
+                k2=(1*(j+1)/145) - 0.5;
+                po_data.push.apply(po_data,[
+                    x1*120+0.01 , -1.1 , k1*120,
+                    x2*120+0.01 , -1.1 , k1*120,
+                    x2*120+0.01 , -1.1 , k2*120,
+                    x1*120+0.01 , -1.1 , k2*120
+                ]);
+                count +=6;
+                for(k=0;k<5;k++)
+                {
+                    index_data.push(s,s+1,s+2,s+2,s+3,s);
+                    s+=4;
+                }
+                mp_data.push.apply(mp_data,[
+                    2.0, 0.0,
+                    0.0, 0.0,
+                    0.0, 2.0,
+                    2.0, 2.0,
+                ]);
+            }
+        }
+        var ground = Object.create(null);
+        ground.count=count;
+        ground.poBuf=webgl.createBuffer();
+        webgl.bindBuffer(webgl.ARRAY_BUFFER,ground.poBuf);
+        webgl.bufferData(webgl.ARRAY_BUFFER, new Float32Array(po_data), webgl.STATIC_DRAW);
+
+        ground.mpBuf = webgl.createBuffer();
+
+        webgl.bindBuffer(webgl.ARRAY_BUFFER, ground.mpBuf);
+        webgl.bufferData(webgl.ARRAY_BUFFER, new Float32Array(mp_data), webgl.STATIC_DRAW);
+
+        ground.indexBuf = webgl.createBuffer();
+
+        webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, ground.indexBuf);
+        webgl.bufferData(webgl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index_data), webgl.STATIC_DRAW);
+
+
+        maze.wallList=[];
+        for(var tot=0;tot<=3;tot++) {
+            s=0;
+            count=0;
+            po_data = [];
+            index_data = [];
+            mp_data = [];
+            // k1和k2算作Z轴
+            for (i = 0; i < rowWall[tot].length; i += 10) { // rowWall.length
+                item = rowWall[tot][i];
+                while ((tmp = item.pop())) {
+                    k1 = (2 * i / height) - 1;
+                    k2 = (2 * (i + 10) / height) - 1;
+                    po_data.push.apply(po_data, [
+                        tmp.x1 * 120 + 0.01, -1.09, k1 * 120, // 左下
+                        tmp.x2 * 120 + 0.01, -1.09, k1 * 120, // 右下
+                        tmp.x2 * 120 + 0.01, 0.2, k1 * 120, // 右上
+                        tmp.x1 * 120 + 0.01, 0.2, k1 * 120, // 左上
+
+                        tmp.x2 * 120 + 0.01, -1.09, k1 * 120,
+                        tmp.x2 * 120 + 0.01, -1.09, k2 * 120,
+                        tmp.x2 * 120 + 0.01, 0.2, k2 * 120,
+                        tmp.x2 * 120 + 0.01, 0.2, k1 * 120,
+
+                        tmp.x1 * 120 + 0.01, -1.09, k2 * 120,
+                        tmp.x2 * 120 + 0.01, -1.09, k2 * 120,
+                        tmp.x2 * 120 + 0.01, 0.2, k2 * 120,
+                        tmp.x1 * 120 + 0.01, 0.2, k2 * 120,
+
+                        tmp.x1 * 120 + 0.01, -1.09, k1 * 120,
+                        tmp.x1 * 120 + 0.01, -1.09, k2 * 120,
+                        tmp.x1 * 120 + 0.01, 0.2, k2 * 120,
+                        tmp.x1 * 120 + 0.01, 0.2, k1 * 120,
+
+                        tmp.x1 * 120 + 0.01, 0.2, k1 * 120,
+                        tmp.x2 * 120 + 0.01, 0.2, k1 * 120,
+                        tmp.x2 * 120 + 0.01, 0.2, k2 * 120,
+                        tmp.x1 * 120 + 0.01, 0.2, k2 * 120
+                    ]);
+
+                    count += (6 * 5);
+
+                    for (k = 0; k < 5; k++) {
+                        index_data.push(s, s + 1, s + 2, s + 2, s + 3, s);
+                        s += 4;
+                    }
+
+                    mp_data.push.apply(mp_data, [
+                        1.0, 0.0,
+                        0.0, 0.0,
+                        0.0, 1.0,
+                        1.0, 1.0,
+
+
+                        1.0, 0.0,
+                        0.0, 0.0,
+                        0.0, 1.0,
+                        1.0, 1.0,
+
+                        1.0, 0.0,
+                        0.0, 0.0,
+                        0.0, 1.0,
+                        1.0, 1.0,
+
+                        1.0, 0.0,
+                        0.0, 0.0,
+                        0.0, 1.0,
+                        1.0, 1.0,
+
+                        1.0, 0.0,
+                        1.0, 1.0,
+                        0.0, 1.0,
+                        0.0, 0.0
+                    ]);
+                }
+            }
+
+            maze.wallList[tot] = Object.create(null);
+            maze.wallList[tot].count = count;
+
+            maze.wallList[tot].poBuf = webgl.createBuffer();
+
+            webgl.bindBuffer(webgl.ARRAY_BUFFER, maze.wallList[tot].poBuf);
+            webgl.bufferData(webgl.ARRAY_BUFFER, new Float32Array(po_data), webgl.STATIC_DRAW);
+
+            maze.wallList[tot].mpBuf = webgl.createBuffer();
+
+            webgl.bindBuffer(webgl.ARRAY_BUFFER, maze.wallList[tot].mpBuf);
+            webgl.bufferData(webgl.ARRAY_BUFFER, new Float32Array(mp_data), webgl.STATIC_DRAW);
+
+            maze.wallList[tot].indexBuf = webgl.createBuffer();
+
+            webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, maze.wallList[tot].indexBuf);
+            webgl.bufferData(webgl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index_data), webgl.STATIC_DRAW);
+        }
+
+
+
+        webgl.uniformMatrix4fv(
+            uPMatrix, false, (function(a, r, n, f){
+                a = 1 / Math.tan(a * Math.PI / 360);
+                
+                return [
+                    a/r, 0, 0, 0,
+                    0, a, 0, 0,
+                    0, 0, -(f+n)/(f-n), -1,
+                    0, 0, -2*f*n/(f-n), 0
+                ];
+            })(90, c2d.width/c2d.height, 0.1, 100)
+        );
+        
+        webgl.enable(webgl.DEPTH_TEST);
+
+        var imgGround = new Image();
+        var img = [];
+
+        imgGround.onload = function () {
+            ground.texture = webgl.createTexture();
+            webgl.activeTexture(webgl.TEXTURE0);
+            webgl.bindTexture(webgl.TEXTURE_2D, ground.texture);
+            webgl.pixelStorei(webgl.UNPACK_FLIP_Y_WEBGL, true);
+
+            webgl.texImage2D(
+                webgl.TEXTURE_2D, 0, webgl.RGBA, webgl.RGBA, webgl.UNSIGNED_BYTE, imgGround
+            );
+
+            webgl.generateMipmap(webgl.TEXTURE_2D);
+
+            webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_MAG_FILTER, webgl.LINEAR);
+            webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_MIN_FILTER, webgl.LINEAR);
+
+            webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_WRAP_S, webgl.MIRRORED_REPEAT);
+            webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_WRAP_T, webgl.MIRRORED_REPEAT);
+
+            webgl.uniform1i(uTex, 0);
+
+            webgl.bindTexture(webgl.TEXTURE_2D, null);
+
+            imgGround.loaded = true;
+
+            if(imgGround.loaded) {
+                setInterval(function() {
+                    draw(a);
+                }, 1024);
+            }
+        };
+        function imgConfig(tot) {
+            return function() {
+                console.log(img[tot]);
+                maze.wallList[tot].texture = webgl.createTexture();
+                webgl.activeTexture(webgl.TEXTURE0);
+                webgl.bindTexture(webgl.TEXTURE_2D, maze.wallList[tot].texture);
+                webgl.pixelStorei(webgl.UNPACK_FLIP_Y_WEBGL, true);
+
+                webgl.texImage2D(
+                    webgl.TEXTURE_2D, 0, webgl.RGBA, webgl.RGBA, webgl.UNSIGNED_BYTE, img[tot]
+                );
+
+                webgl.generateMipmap(webgl.TEXTURE_2D);
+
+                webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_MAG_FILTER, webgl.LINEAR);
+                webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_MIN_FILTER, webgl.LINEAR);
+
+                webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_WRAP_S, webgl.MIRRORED_REPEAT);
+                webgl.texParameteri(webgl.TEXTURE_2D, webgl.TEXTURE_WRAP_T, webgl.MIRRORED_REPEAT);
+
+                webgl.uniform1i(uTex, 0);
+
+                webgl.bindTexture(webgl.TEXTURE_2D, null);
+
+                img[tot].loaded = true;
+
+                if (img[tot].loaded) {
+                    setInterval(function () {
+                        draw(a);
+                    }, 32);
+                }
+            }
+        }
+            for(tot=0;tot<=3;tot++) {
+            img[tot] = new Image();
+            img[tot].onload = imgConfig(tot);
+        }
+
+        img[0].src = './皮卡丘.jpg';
+        img[1].src = './可达鸭.jpg';
+        img[2].src = './胖丁.jpg';
+        img[3].src = './伊布.jpg';
+        imgGround.src='./草地.jpg';
+        
+        var a = Math.PI / 2;
+
+        function draw(a) {
+            if(KEYS[UP])
+                camera.move({x:speed,y:0.0});
+            if(KEYS[DOWN])
+                camera.move({x:-speed,y:0.0});
+            if(KEYS[LEFT])
+                camera.move({x:0.0,y:speed});
+            if(KEYS[RIGHT])
+                camera.move({x:0.0,y:-speed});
+            // 绘制地板
+            drawGround();
+            // 绘制迷宫
+            drawMaze(a);
+            if(Math.sqrt((role.x-280)*(role.x-280)+(role.y-380)*(role.y-380))<=10 && success)
+            {
+                if(confirm("恭喜，到达出口！\n是否进入下一关?"))
+                    location.reload();
+                success=false;
+            }
+        }
+
+        function drawMaze(a) {
+            var s = Math.sin(a);
+            var c = Math.cos(a);
+
+            webgl.uniformMatrix4fv(
+                uMVMatrix, false, [1 * c,0,-1 * s,0, 0,5,0,0, 1 * s,0,1 * c,0, 107.5,0,-120.5,1]
+            );
+
+            webgl.uniformMatrix4fv(
+                uCMVMatrix, false, camera.toMatrix()
+            );
+
+            webgl.uniformMatrix4fv(
+                uCRMatrix, false, [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+            );
+
+            webgl.uniform1i(isMaze, true);
+            for(var tot=0;tot<=3;tot++) {
+                webgl.bindBuffer(webgl.ARRAY_BUFFER, maze.wallList[tot].poBuf);
+                webgl.vertexAttribPointer(aVertex, 3, webgl.FLOAT, false, 0, 0);
+
+                webgl.bindBuffer(webgl.ARRAY_BUFFER, maze.wallList[tot].mpBuf);
+                webgl.vertexAttribPointer(aMp, 2, webgl.FLOAT, false, 0, 0);
+                webgl.activeTexture(webgl.TEXTURE0);
+                webgl.bindTexture(webgl.TEXTURE_2D, maze.wallList[tot].texture);
+
+                webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, maze.wallList[tot].indexBuf);
+
+                webgl.drawElements(webgl.TRIANGLES, maze.wallList[tot].count, webgl.UNSIGNED_SHORT, 0);
+            }
+        }
+
+        function drawGround() {
+            webgl.uniformMatrix4fv(
+                uMVMatrix, false, [15,0,0,0, 0,5,0,0, 0,0,15,0, 0,0,-100,1]
+            );
+
+            webgl.uniformMatrix4fv(
+                uCMVMatrix, false, camera.toMatrix()
+            );
+
+            webgl.uniformMatrix4fv(
+                uCRMatrix, false, [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+            );
+
+            webgl.uniform1i(isMaze, true);
+            webgl.bindBuffer(webgl.ARRAY_BUFFER, ground.poBuf);
+            webgl.vertexAttribPointer(aVertex, 3, webgl.FLOAT, false, 0, 0);
+
+            webgl.bindBuffer(webgl.ARRAY_BUFFER, ground.mpBuf);
+            webgl.vertexAttribPointer(aMp, 2, webgl.FLOAT, false, 0, 0);
+            webgl.activeTexture(webgl.TEXTURE0);
+            webgl.bindTexture(webgl.TEXTURE_2D, ground.texture);
+
+            webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, ground.indexBuf);
+
+            webgl.drawElements(webgl.TRIANGLES, ground.count, webgl.UNSIGNED_SHORT, 0);
+        }
+
+        /**        绘制3D迷宫完毕，摄像头处理           **/
+
+        var cx, cy, ret;
+
+        var globalRot = window.innerWidth / 2;
+        var camera = {
+            rot: 0,
+            x: 0,
+            y: 1,
+            z: 0,
+            move: function(e){
+                // 移动时需要做朝向计算
+                cx = Math.sin(-this.rot) * e.x-Math.sin(-this.rot-Math.PI/2)*e.y;
+                cy = Math.cos(-this.rot) * e.x-Math.cos(-this.rot-Math.PI/2)*e.y;
+                console.log(cx,cy);
+
+                this.x += cx;
+                this.z += cy;
+
+                ret = role.check(-this.x/120, this.z/242, -cx, cy); // 后两个参数代表方向
+
+                if(ret.x === 0) {
+                    this.x -= cx;
+                } else {
+                    role.x = ret.x;
+                }
+                if(ret.y === 0) {
+                    this.z -= cy;
+                } else {
+                    role.y = ret.y;
+                }
+
+                role.update();
+            },
+            toMatrix: function(){
+                var s = Math.sin(this.rot),
+                    c = Math.cos(this.rot),
+                    x = this.x,
+                    z = this.z;
+                    y =  this.y;
+                // 无Y轴相关变化
+                return [
+                    c, 0, -s, 0,
+                    0, 1, 0, 0,
+                    s, 0, c, 0, 
+                    c * x + s * z, y, c * z - s * x, 1
+                ];
+            }
+        };
+
+
+        var LEFT = 65,
+            UP = 87,
+            RIGHT = 68,
+            DOWN = 83,
+            KEYS = {};
+        var speed=0.2;
+        document.onmousedown = function(){
+            speed=0.4;
+        }
+        document.onmouseup = function(){
+            speed=0.2;
+        }
+        document.onkeydown = function(e) {
+            KEYS[e.keyCode] = true;
+            console.log(KEYS,e.keyCode);
+        };
+        document.onkeyup = function(e) {
+            KEYS[e.keyCode] = false;
+        };
+        var jmp;
+        var t=0;
+        document.onkeypress=function(e){
+            if(e.keyCode == 89|| e.keyCode==121)
+            {
+                fly=true;
+                camera.y=-15;
+            }
+            if(e.keyCode==85 || e.keyCode == 117)
+            {
+                drop=true;
+                camera.y=4;
+            }
+            if(t-0<0.00001) {
+                if (e.keyCode == 32) {
+                    jmp = setInterval(function () {
+                        camera.y -= 0.8 - 0.2 * t;
+                        console.log(jmp);
+                        if (camera.y>=1) {
+                            t=-0.2;
+                            clearInterval(jmp);
+                        }
+                        t += 0.2;
+                    }, 16);
+                }
+            }
+        }
+        document.onmousemove = function(e) {
+            var x = e.clientX;
+            console.log(window.innerWidth);
+            if(e.clientX <= 2) {
+                camera.rot += -0.05;
+            } else if(e.clientX >= window.innerWidth - 2) {
+                camera.rot += 0.05;
+            } else {
+                camera.rot += ((x - globalRot) / 100);
+            }
+            globalRot = x;
+        };
+
+        function Role() {
+            this.main = document.createElement('div');
+            this.main.className = 'role';
+
+            this.diffTop = oC2.offsetTop;
+            this.diffLeft = oC2.offsetLeft;
+            this.disX = oC2.offsetHeight;
+            this.disY = oC2.offsetWidth + 1;
+
+            this.x = 15;
+            this.y = -1;
+
+
+            document.body.appendChild(this.main);
+        }
+
+        Role.prototype.update = function() {
+            this.x0 = this.x - 1;
+            this.x2 = this.x + 1;
+
+            this.y0 = this.y - 1;
+            this.y2 = this.y + 1;
+
+            this.main.style.top = this.diffTop + this.x - 4 + 'px';
+            this.main.style.left = this.diffLeft + this.y - 8 + 'px';
+
+        };
+
+        Role.prototype.isWall = function(cx, cy) {
+            var points = [];
+            var ret;
+            var retX = true,
+                retY = true;
+            if(cx === -1) {
+                points.push({
+                    x: this.y0,
+                    y: this.x0
+                }, {
+                    x: this.y0,
+                    y: this.x2
+                });
+
+                if(cy === -1) {
+                    points.push({
+                        x: this.y2,
+                        y: this.x0
+                    });
+                } else {
+                    points.push({
+                        x: this.y2,
+                        y: this.x2
+                    });
+                }
+            } else {
+                points.push({
+                    x: this.y2,
+                    y: this.x0
+                }, {
+                    x: this.y2,
+                    y: this.x2
+                });
+
+                if(cy === -1) {
+                    points.push({
+                        x: this.y0,
+                        y: this.x0
+                    });
+                } else {
+                    points.push({
+                        x: this.y0,
+                        y: this.x2
+                    });
+                }
+            }
+
+            for(var i = 0; i < 3; i++) {
+                ret = this.pointCheck(points[i].x, points[i].y, cx, cy);
+
+                if(!ret.x) {
+                    retX = false;
+                }
+
+                if(!ret.y) {
+                    retY = false;
+                }
+
+                if(!retX && !retY) {
+                    break ;
+                }
+            }
+            
+            return {
+                x: retX,
+                y: retY
+            };
+        };
+
+        Role.prototype.pointCheck = function(x, y, cx, cy) {
+            var start, r;
+            var retX = true,
+                retY = true;
+
+            x = x >> 0;
+            y = y >> 0;
+
+            x += ((1 * cx) >> 0);
+
+            if(x > 0 && x<390 && y > 0 && y<290 && !fly) {
+                start = y * width * 4 + x * 4;
+                r = pixData[start];
+                if(r === 0) {
+                    drawDebug(x, y, 'yellow');
+                    retX = false;
+                }
+            }
+
+            x -= (1 * cx);
+            y += (1 * cy);
+            if(y > 0 && x<390 && x > 0 &&y<290 && !fly) {
+                start = y * width * 4 + x * 4;
+                r = pixData[start];
+                if(r === 0) {
+                    drawDebug(x, y, 'yellow');
+                    retY = false;
+                }
+            }
+            
+            return {
+                x: retX,
+                y: retY
+            };
+        };
+
+        Role.prototype.check = function(x, y, cx, cy) {
+            var ret, data;
+            x = (x/2+0.05) * this.disX;
+            y = (y) * this.disY;
+
+            cx = Math.abs(cx) < 0.01 ? 0 : cx / Math.abs(cx);
+            cy = Math.abs(cy) < 0.01 ? 0 : cy / Math.abs(cy);
+
+            drawDebug(this.y >> 0, this.x >> 0, 'green');
+            ret = this.isWall(cy, cx);
+
+            data = {
+                x: (ret.y === true) ? x : 0,
+                y: (ret.x === true) ? y : 0
+            };
+
+            return data;
+        };
+
+        Role.prototype.hide = function() {
+            c2d.style.opacity = 0;
+            this.main.style.opacity = 0;
+        };
+
+        Role.prototype.show = function() {
+            c2d.style.opacity = 1;
+            this.main.style.opacity = 1;
+        };
+
+        var role = new Role();
+        role.update();
+        window.onscroll=function(){
+            role.diffTop = oC2.offsetTop;
+            role.diffLeft = oC2.offsetLeft;
+            role.disX = oC2.offsetHeight;
+            role.disY = oC2.offsetWidth + 1;
+            role.update();
+        }
+        window.onresize=function () {
+            role.diffTop = oC2.offsetTop;
+            role.diffLeft = oC2.offsetLeft;
+            role.disX = oC2.offsetHeight;
+            role.disY = oC2.offsetWidth + 1;
+            role.update();
+        }
+    </script>
+</body>
+</html>
