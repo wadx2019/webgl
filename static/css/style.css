@@ -1,0 +1,33 @@
+html {
+    cursor: none;
+}
+.c2d {
+    margin: 20px auto;
+    display: block;
+    transition-property: opacity;
+    transition-duration: 1s;
+    visibility: hidden;
+}
+.c3d {
+    display: block;
+    margin: 0 auto;
+    position: absolute;
+    height: 100%;
+    width: 100%;
+    position: absolute;
+    top: 0px;
+    bottom: 0px;
+    z-index: 0;
+    left:0%;
+    top:0%;
+}
+.role {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: red;
+    position: absolute;
+    transition-property: opacity;
+    transition-duration: 1s;
+    visibility: hidden;
+}

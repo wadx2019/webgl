@@ -2,31 +2,37 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>maze</title>
+    <title>神奇宝贝的迷宫秘境</title>
     <script id="shader-vs" type="x-shader/x-vertex">
         attribute vec3 aVertex;
         attribute vec3 aColor;
         attribute vec2 aMp;
+        attribute vec3 aVertexNormal;
 
         uniform bool isMaze;
         uniform mat4 uPMatrix;
         uniform mat4 uMVMatrix; // 模型变换
-
+        uniform mat4 uNormalMatrix;
         uniform mat4 uCMVMatrix; // 摄像机位移
         uniform mat4 uCRMatrix; // 摄像机旋转
 
         varying vec3 vColor;
+        varying vec3 vLighting;
         varying vec2 vMp;
         void main() {
-            vec4 po = uMVMatrix * vec4(aVertex, 1.0);
 
-            if(isMaze) {
-                vMp = aMp;
-            } else {
-                vColor = aColor;
-            }
+            vMp = aMp;
 
-            gl_Position = uPMatrix * uCRMatrix * uCMVMatrix * po;
+            vec3 ambientLight = vec3(0.5, 0.5, 0.5);
+            vec3 directionalLightColor = vec3(1, 1, 1);
+            vec3 directionalVector = normalize(vec3(-1, 1, 1));
+
+            vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0);
+
+            float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0);
+            vLighting = ambientLight + (directionalLightColor * directional);
+
+            gl_Position = uPMatrix * uCRMatrix * uCMVMatrix * uMVMatrix * vec4(aVertex, 1.0);
         }
     </script>
 
@@ -36,28 +42,28 @@
         uniform bool isMaze;
         uniform sampler2D uTex;
 
+        varying vec3 vLighting;
         varying vec3 vColor;
         varying vec2 vMp;
         void main() {
             if(isMaze) {
-                gl_FragColor = texture2D(uTex, vMp);
-            } else {
-                gl_FragColor = vec4(vColor, 1.0);
+                vec4 texelColor = texture2D(uTex, vMp);
+                gl_FragColor = vec4(texelColor.rgb * vLighting,texelColor.a);
             }
         }
     </script>
-    <link rel="stylesheet" type="text/css" href="css/style.css" >
+    <link rel="stylesheet" type="text/css" href="static/css2/style.css" >
+    <link rel="icon" type="image/x-icon" href="static/img2/icon.ico" >
 </head>
 <body onload="help()">
 <canvas id="c2d" class="c2d" width="390" height="290"></canvas>
 <canvas id="c3d" class="c3d" width="1080" height="640"></canvas>
-</div>
-<script type="text/javascript" src="js/init.js"></script>
-<script type="text/javascript" src="js/maze.js"></script>
-<script type="text/javascript" src="js/wall.js"></script>
-<script type="text/javascript" src="js/draw.js"></script>
-<script type="text/javascript" src="js/camera.js"></script>
-<script type="text/javascript" src="js/event.js"></script>
-<script type="text/javascript" src="js/role.js"></script>
+<script type="text/javascript" src="static/js2/init.js"></script>
+<script type="text/javascript" src="static/js2/maze.js"></script>
+<script type="text/javascript" src="static/js2/wall.js"></script>
+<script type="text/javascript" src="static/js2/draw.js"></script>
+<script type="text/javascript" src="static/js2/camera.js"></script>
+<script type="text/javascript" src="static/js2/event.js"></script>
+<script type="text/javascript" src="static/js2/role.js"></script>
 </body>
 </html>
